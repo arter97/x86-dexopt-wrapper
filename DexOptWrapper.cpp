@@ -1,8 +1,6 @@
 /*
  * dexopt invocation test.
  *
- * You must have BOOTCLASSPATH defined.  On the simulator, you will also
- * need ANDROID_ROOT.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -13,8 +11,6 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <errno.h>
-
-#include "cutils/properties.h"
 
 //using namespace android;
 
@@ -32,31 +28,21 @@ static int privFunc(void)
 /*
  * We're in the child process.  exec dexopt.
  */
-static void runDexopt(int zipFd, int odexFd, const char* inputFileName)
+static void runDexopt(int zipFd, int odexFd, const char* inputFileName, const char* kDexOptBin)
 {
-    static const char* kDexOptBin = "/bin/dexopt";
     static const int kMaxIntLen = 12;   // '-'+10dig+'\0' -OR- 0x+8dig
     char zipNum[kMaxIntLen];
     char odexNum[kMaxIntLen];
-    char dexoptFlags[PROPERTY_VALUE_MAX];
-    const char* androidRoot;
     char* execFile;
 
-    /* pull optional configuration tweaks out of properties */
-    property_get("dalvik.vm.dexopt-flags", dexoptFlags, "");
-
-    /* find dexopt executable; this exists for simulator compatibility */
-    androidRoot = getenv("ANDROID_ROOT");
-    if (androidRoot == NULL)
-        androidRoot = "/system";
-    execFile = (char*) malloc(strlen(androidRoot) + strlen(kDexOptBin) +1);
-    sprintf(execFile, "%s%s", androidRoot, kDexOptBin);
+    execFile = (char*) malloc(strlen(kDexOptBin) +1);
+    sprintf(execFile, "%s%s", "/", kDexOptBin);
 
     sprintf(zipNum, "%d", zipFd);
     sprintf(odexNum, "%d", odexFd);
 
     execl(execFile, execFile, "--zip", zipNum, odexNum, inputFileName,
-        dexoptFlags, (char*) NULL);
+        "", (char*) NULL);
     fprintf(stderr, "execl(%s) failed: %s\n", kDexOptBin, strerror(errno));
 }
 
@@ -69,7 +55,7 @@ static void runDexopt(int zipFd, int odexFd, const char* inputFileName)
  *
  * Returns 0 on success.
  */
-int doStuff(const char* zipName, const char* odexName)
+int doStuff(const char* kDexOptBin, const char* zipName, const char* odexName)
 {
     int zipFd, odexFd;
 
@@ -111,7 +97,7 @@ int doStuff(const char* zipName, const char* odexName)
             exit(65);
         }
 
-        runDexopt(zipFd, odexFd, zipName);  /* does not return */
+        runDexopt(zipFd, odexFd, zipName, kDexOptBin);  /* does not return */
         exit(67);                           /* usually */
     } else {
         /* parent -- wait for child to finish */
@@ -157,17 +143,12 @@ int doStuff(const char* zipName, const char* odexName)
  */
 int main(int argc, char** argv)
 {
-    if (argc < 3 || argc > 4) {
-        fprintf(stderr, "Usage: %s <input jar/apk> <output odex> "
-            "[<bootclasspath>]\n\n", argv[0]);
-        fprintf(stderr, "Example: dexopttest "
-            "/system/app/NotePad.apk /system/app/NotePad.odex\n");
+    if (argc != 5) {
+        fprintf(stderr, "Usage: %s <x86 dexopt binary path> <input jar/apk> <output odex> <bootclasspath>\n\n", argv[0]);
         return 2;
     }
 
-    if (argc > 3) {
-        setenv("BOOTCLASSPATH", argv[3], 1);
-    }
+    setenv("BOOTCLASSPATH", argv[4], 1);
 
-    return (doStuff(argv[1], argv[2]) != 0);
+    return (doStuff(argv[1], argv[2], argv[3]) != 0);
 }
